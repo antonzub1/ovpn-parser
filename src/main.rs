@@ -3,7 +3,7 @@ use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{digit1, line_ending, space1};
 use nom::sequence::{separated_pair, terminated};
-use nom::IResult;
+use nom::{Err, IResult};
 use tracing::info;
 
 use std::fs::{read_to_string, remove_file, File};
@@ -47,6 +47,9 @@ pub struct OpenVPNConfig {
     config_type: String,
     dev: String,
     resolv_retry: String,
+    nobind: String,
+    persist_key: String,
+    persist_tun: String,
     verb: String,
 }
 
@@ -59,6 +62,9 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
     let (remainder, client) = parse_client(input)?;
     let (remainder, dev) = parse_dev(remainder)?;
     let (remainder, resolv_retry) = parse_resolv_retry(remainder)?;
+    let (remainder, nobind) = parse_nobind(remainder)?;
+    let (remainder, persist_key) = parse_persist_key(remainder)?;
+    let (remainder, persist_tun) = parse_persist_tun(remainder)?;
     let (remainder, verb) = parse_verb(remainder)?;
     Ok((
         remainder,
@@ -66,6 +72,9 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
             config_type: client.into(),
             dev: dev.into(),
             resolv_retry: resolv_retry.into(),
+            nobind: nobind.into(),
+            persist_key: persist_key.into(),
+            persist_tun: persist_tun.into(),
             verb: verb.into(),
         },
     ))
