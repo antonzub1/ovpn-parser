@@ -53,6 +53,11 @@ pub struct OpenVPNConfig {
     persist_key: bool,
     persist_tun: bool,
     verb: u32,
+    remote_cert_tls: RemoteCertTLS,
+    ping: u32,
+    ping_restart: u32,
+    sndbuf: u32,
+    rcvbuf: u32,
 }
 
 #[derive(Debug)]
@@ -117,6 +122,14 @@ impl From<&str> for RemoteCertTLS {
     }
 }
 
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+pub enum Cipher {
+    None,
+    BF_CBC,
+    AES_256_GCM,
+}
+
 fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
     let (remainder, config_type) = parse_config_type(input)?;
     let (remainder, dev) = parse_dev(remainder)?;
@@ -125,6 +138,11 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
     let (remainder, persist_key) = parse_persist_key(remainder)?;
     let (remainder, persist_tun) = parse_persist_tun(remainder)?;
     let (remainder, verb) = parse_verb(remainder)?;
+    let (remainder, remote_cert_tls) = parse_remote_cert_tls(remainder)?;
+    let (remainder, ping) = parse_ping(remainder)?;
+    let (remainder, ping_restart) = parse_ping_restart(remainder)?;
+    let (remainder, sndbuf) = parse_sndbuf(remainder)?;
+    let (remainder, rcvbuf) = parse_rcvbuf(remainder)?;
     Ok((
         remainder,
         OpenVPNConfig {
@@ -135,6 +153,11 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
             persist_key,
             persist_tun,
             verb,
+            remote_cert_tls,
+            ping,
+            ping_restart,
+            sndbuf,
+            rcvbuf,
         },
     ))
 }
@@ -188,6 +211,62 @@ fn parse_verb(input: &str) -> IResult<&str, u32> {
     Ok((remainder, verb))
 }
 
+fn parse_remote_cert_tls(input: &str) -> IResult<&str, RemoteCertTLS> {
+    let (remainder, (_, remote_cert_tls)) = terminated(
+        separated_pair(tag("remote-cert-tls"), space1, alt((tag("client"), tag("server")))),
+        line_ending,
+    )(input)?;
+    Ok((remainder, remote_cert_tls.into()))
+}
+
+fn parse_ping(input: &str) -> IResult<&str, u32> {
+    let (remainder, (_, ping)) = terminated(
+        separated_pair(
+            tag("ping"),
+            space1,
+            map_res(digit1, |s: &str| s.parse::<u32>()),
+        ),
+        line_ending,
+    )(input)?;
+    Ok((remainder, ping))
+}
+
+fn parse_ping_restart(input: &str) -> IResult<&str, u32> {
+    let (remainder, (_, ping_restart)) = terminated(
+        separated_pair(
+            tag("ping-restart"),
+            space1,
+            map_res(digit1, |s: &str| s.parse::<u32>()),
+        ),
+        line_ending,
+    )(input)?;
+    Ok((remainder, ping_restart))
+}
+
+fn parse_sndbuf(input: &str) -> IResult<&str, u32> {
+    let (remainder, (_, sndbuf)) = terminated(
+        separated_pair(
+            tag("sndbuf"),
+            space1,
+            map_res(digit1, |s: &str| s.parse::<u32>()),
+        ),
+        line_ending,
+    )(input)?;
+    Ok((remainder, sndbuf))
+}
+
+fn parse_rcvbuf(input: &str) -> IResult<&str, u32> {
+    let (remainder, (_, rcvbuf)) = terminated(
+        separated_pair(
+            tag("rcvbuf"),
+            space1,
+            map_res(digit1, |s: &str| s.parse::<u32>()),
+        ),
+        line_ending,
+    )(input)?;
+    Ok((remainder, rcvbuf))
+}
+
 fn main() {
     // let args = Args::parse();
     // let mut conf = String::new();
@@ -230,8 +309,7 @@ fn main() {
     tracing::subscriber::set_global_default(global_default)
         .expect("Unable to set global subscriber.");
     let conf = read_to_string("conn.ovpn").expect("Failed to read a file");
-    let conf = conf.as_str();
-    let (_, config) = parse_openvpn_config(conf).expect("Failed to parse OpenVPN configuration");
+    let (_, config) = parse_openvpn_config(&conf).expect("Failed to parse OpenVPN configuration");
     info!("config: {:?}", config);
     // info!("remainder: {}", remainder);
 }
