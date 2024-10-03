@@ -2,6 +2,7 @@ use clap::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{digit1, line_ending, space1};
+use nom::combinator::{map_res, opt};
 use nom::sequence::{separated_pair, terminated};
 use nom::{Err, IResult};
 use tracing::info;
@@ -9,6 +10,7 @@ use tracing::info;
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::Command;
+use std::str::FromStr;
 use tracing_subscriber::fmt::SubscriberBuilder;
 
 // #[derive(Parser)]
@@ -44,22 +46,79 @@ use tracing_subscriber::fmt::SubscriberBuilder;
 
 #[derive(Debug)]
 pub struct OpenVPNConfig {
-    config_type: String,
-    dev: String,
-    resolv_retry: String,
-    nobind: String,
-    persist_key: String,
-    persist_tun: String,
-    verb: String,
+    config_type: ConfigType,
+    dev: DevType,
+    resolv_retry: ResolvRetry,
+    nobind: bool,
+    persist_key: bool,
+    persist_tun: bool,
+    verb: u32,
 }
 
+#[derive(Debug)]
+pub enum DevType {
+    Tun,
+    Tap,
+}
+
+impl From<&str> for DevType {
+    fn from(s: &str) -> Self {
+        match s {
+            "tun" => Self::Tun,
+            "tap" => Self::Tap,
+            _ => panic!("Invalid dev type"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ConfigType {
+    Client,
+    Server,
+}
+
+impl From<Option<&str>> for ConfigType {
+    fn from(value: Option<&str>) -> Self {
+        match value {
+            Some(_) => Self::Client,
+            None => Self::Server,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum ResolvRetry {
     Seconds(u32),
-    Infinite
+    Infinite,
+}
+
+impl From<&str> for ResolvRetry {
+    fn from(s: &str) -> Self {
+        match s {
+            "infinite" => Self::Infinite,
+            seconds => Self::Seconds(u32::from_str(seconds).unwrap()),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum RemoteCertTLS {
+    Client,
+    Server
+}
+
+impl From<&str> for RemoteCertTLS {
+    fn from(s: &str) -> Self {
+        match s {
+            "client" => Self::Client,
+            "server" => Self::Server,
+            _ => panic!("Invalid remote-cert-tls type"),
+        }
+    }
 }
 
 fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
-    let (remainder, client) = parse_client(input)?;
+    let (remainder, config_type) = parse_config_type(input)?;
     let (remainder, dev) = parse_dev(remainder)?;
     let (remainder, resolv_retry) = parse_resolv_retry(remainder)?;
     let (remainder, nobind) = parse_nobind(remainder)?;
@@ -69,53 +128,61 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
     Ok((
         remainder,
         OpenVPNConfig {
-            config_type: client.into(),
-            dev: dev.into(),
-            resolv_retry: resolv_retry.into(),
-            nobind: nobind.into(),
-            persist_key: persist_key.into(),
-            persist_tun: persist_tun.into(),
-            verb: verb.into(),
+            config_type,
+            dev,
+            resolv_retry,
+            nobind,
+            persist_key,
+            persist_tun,
+            verb,
         },
     ))
 }
 
-fn parse_client(input: &str) -> IResult<&str, &str> {
-    terminated(tag("client"), line_ending)(input)
+fn parse_config_type(input: &str) -> IResult<&str, ConfigType> {
+    let (remainder, config_type) = opt(terminated(tag("client"), line_ending))(input)?;
+    Ok((remainder, config_type.into()))
 }
 
-fn parse_dev(input: &str) -> IResult<&str, &str> {
+fn parse_dev(input: &str) -> IResult<&str, DevType> {
     let (remainder, (_, dev)) = terminated(
         separated_pair(tag("dev"), space1, alt((tag("tun"), tag("tap")))),
         line_ending,
     )(input)?;
-    Ok((remainder, dev))
+    Ok((remainder, dev.into()))
 }
 
-fn parse_resolv_retry(input: &str) -> IResult<&str, &str> {
+fn parse_resolv_retry(input: &str) -> IResult<&str, ResolvRetry> {
     let (remainder, (_, resolv_retry)) = terminated(
         separated_pair(tag("resolv-retry"), space1, alt((tag("infinite"), digit1))),
         line_ending,
     )(input)?;
-    Ok((remainder, resolv_retry))
+    Ok((remainder, resolv_retry.into()))
 }
 
-fn parse_nobind(input: &str) -> IResult<&str, &str> {
-    terminated(tag("nobind"), line_ending)(input)
+fn parse_nobind(input: &str) -> IResult<&str, bool> {
+    let (remainder, nobind) = opt(terminated(tag("nobind"), line_ending))(input)?;
+    Ok((remainder, nobind.is_some()))
 }
 
-fn parse_persist_key(input: &str) -> IResult<&str, &str> {
-    terminated(tag("persist-key"), line_ending)(input)
+fn parse_persist_key(input: &str) -> IResult<&str, bool> {
+    let (remainder, persist_key) = opt(terminated(tag("persist-key"), line_ending))(input)?;
+    Ok((remainder, persist_key.is_some()))
 }
 
-fn parse_persist_tun(input: &str) -> IResult<&str, &str> {
-    terminated(tag("persist-tun"), line_ending)(input)
+fn parse_persist_tun(input: &str) -> IResult<&str, bool> {
+    let (remainder, persist_tun) = opt(terminated(tag("persist-tun"), line_ending))(input)?;
+    Ok((remainder, persist_tun.is_some()))
 }
 
-fn parse_verb(input: &str) -> IResult<&str, &str> {
+fn parse_verb(input: &str) -> IResult<&str, u32> {
     // TODO: Parse verbosity level with iterator combinator
     let (remainder, (_, verb)) = terminated(
-        separated_pair(tag("verb"), space1, digit1),
+        separated_pair(
+            tag("verb"),
+            space1,
+            map_res(digit1, |s: &str| s.parse::<u32>()),
+        ),
         line_ending,
     )(input)?;
     Ok((remainder, verb))
@@ -164,8 +231,7 @@ fn main() {
         .expect("Unable to set global subscriber.");
     let conf = read_to_string("conn.ovpn").expect("Failed to read a file");
     let conf = conf.as_str();
-    let (_, config) =
-        parse_openvpn_config(conf).expect("Failed to parse OpenVPN configuration");
+    let (_, config) = parse_openvpn_config(conf).expect("Failed to parse OpenVPN configuration");
     info!("config: {:?}", config);
     // info!("remainder: {}", remainder);
 }
