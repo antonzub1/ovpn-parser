@@ -9,6 +9,7 @@ use tracing::info;
 
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 use tracing_subscriber::fmt::SubscriberBuilder;
@@ -60,6 +61,7 @@ pub struct OpenVPNConfig {
     rcvbuf: u32,
     cipher: Cipher,
     tls_cipher: TLSCipher,
+    proto: Proto,
 }
 
 #[derive(Debug)]
@@ -111,7 +113,7 @@ impl From<&str> for ResolvRetry {
 #[derive(Debug)]
 pub enum RemoteCertTLS {
     Client,
-    Server
+    Server,
 }
 
 impl From<&str> for RemoteCertTLS {
@@ -148,29 +150,28 @@ pub enum Cipher {
     AES_256_OFB,
 }
 
-
 impl From<&str> for Cipher {
     fn from(s: &str) -> Self {
         match s {
             "none" => Self::None,
-            "AES-128-CBC"  => Self::AES_128_CBC, 
-            "AES-128-CFB"  => Self::AES_128_CFB,
+            "AES-128-CBC" => Self::AES_128_CBC,
+            "AES-128-CFB" => Self::AES_128_CFB,
             "AES-128-CFB1" => Self::AES_128_CFB1,
             "AES-128-CFB8" => Self::AES_128_CFB8,
-            "AES-128-GCM"  => Self::AES_128_GCM,
-            "AES-128-OFB"  => Self::AES_128_OFB,
-            "AES-192-CBC"  => Self::AES_192_CBC,
-            "AES-192-CFB"  => Self::AES_192_CFB,
+            "AES-128-GCM" => Self::AES_128_GCM,
+            "AES-128-OFB" => Self::AES_128_OFB,
+            "AES-192-CBC" => Self::AES_192_CBC,
+            "AES-192-CFB" => Self::AES_192_CFB,
             "AES-192-CFB1" => Self::AES_192_CFB1,
             "AES-192-CFB8" => Self::AES_192_CFB8,
-            "AES-192-GCM"  => Self::AES_192_GCM,
-            "AES-192-OFB"  => Self::AES_192_OFB,
-            "AES-256-CBC"  => Self::AES_256_CBC,
-            "AES-256-CFB"  => Self::AES_256_CFB,
+            "AES-192-GCM" => Self::AES_192_GCM,
+            "AES-192-OFB" => Self::AES_192_OFB,
+            "AES-256-CBC" => Self::AES_256_CBC,
+            "AES-256-CFB" => Self::AES_256_CFB,
             "AES-256-CFB1" => Self::AES_256_CFB1,
             "AES-256-CFB8" => Self::AES_256_CFB8,
-            "AES-256-GCM"  => Self::AES_256_GCM,
-            "AES-256-OFB"  => Self::AES_256_OFB,
+            "AES-256-GCM" => Self::AES_256_GCM,
+            "AES-256-OFB" => Self::AES_256_OFB,
             _ => panic!("Invalid cipher type"),
         }
     }
@@ -214,18 +215,32 @@ impl From<&str> for TLSCipher {
             "TLS_CHACHA20_POLY1305_SHA256" => Self::TLS_CHACHA20_POLY1305_SHA256,
             "TLS_AES_128_GCM_SHA256" => Self::TLS_AES_128_GCM_SHA256,
 
-            "TLS-ECDHE-ECDSA-WITH-AES-256-GCM-SHA384" => Self::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            "TLS-ECDHE-ECDSA-WITH-AES-256-GCM-SHA384" => {
+                Self::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+            }
             "TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384" => Self::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
             "TLS-DHE-RSA-WITH-AES-256-GCM-SHA384" => Self::TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
-            "TLS-ECDHE-ECDSA-WITH-CHACHA20-POLY1305-SHA256" => Self::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-            "TLS-ECDHE-RSA-WITH-CHACHA20-POLY1305-SHA256" => Self::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-            "TLS-DHE-RSA-WITH-CHACHA20-POLY1305-SHA256" => Self::TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-            "TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256" => Self::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            "TLS-ECDHE-ECDSA-WITH-CHACHA20-POLY1305-SHA256" => {
+                Self::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+            }
+            "TLS-ECDHE-RSA-WITH-CHACHA20-POLY1305-SHA256" => {
+                Self::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+            }
+            "TLS-DHE-RSA-WITH-CHACHA20-POLY1305-SHA256" => {
+                Self::TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+            }
+            "TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256" => {
+                Self::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+            }
             "TLS-ECDHE-RSA-WITH-AES-128-GCM-SHA256" => Self::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
             "TLS-DHE-RSA-WITH-AES-128-GCM-SHA256" => Self::TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
-            "TLS-ECDHE-ECDSA-WITH-AES-256-CBC-SHA384" => Self::TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+            "TLS-ECDHE-ECDSA-WITH-AES-256-CBC-SHA384" => {
+                Self::TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
+            }
             "TLS-ECDHE-RSA-WITH-AES-256-CBC-SHA384" => Self::TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
-            "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA256" => Self::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+            "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA256" => {
+                Self::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+            }
             "TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA256" => Self::TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
             "TLS-DHE-RSA-WITH-AES-128-CBC-SHA256" => Self::TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
             "TLS-ECDHE-ECDSA-WITH-AES-256-CBC-SHA" => Self::TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
@@ -234,11 +249,38 @@ impl From<&str> for TLSCipher {
             "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA" => Self::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
             "TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA" => Self::TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
             "TLS-DHE-RSA-WITH-AES-128-CBC-SHA" => Self::TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
-            _ => panic!("Invalid TLS cipher")
+            _ => panic!("Invalid TLS cipher"),
         }
     }
 }
 
+#[derive(Debug)]
+pub enum Proto {
+    TCP,
+    UDP,
+}
+
+impl From<&str> for Proto {
+    fn from(s: &str) -> Self {
+        match s {
+            "tcp" => Self::TCP,
+            "udp" => Self::UDP,
+            _ => panic!("Invalid proto type"),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum AuthUserPass {
+    UserPass(PathBuf),
+    Prompt,
+}
+
+impl From<&str> for AuthUserPass {
+    fn from(s: &str) -> Self {
+        unimplemented!()
+    }
+}
 fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
     let (remainder, config_type) = parse_config_type(input)?;
     let (remainder, dev) = parse_dev(remainder)?;
@@ -254,6 +296,7 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
     let (remainder, rcvbuf) = parse_rcvbuf(remainder)?;
     let (remainder, cipher) = parse_cipher(remainder)?;
     let (remainder, tls_cipher) = parse_tls_cipher(remainder)?;
+    let (remainder, proto) = parse_proto(remainder)?;
     Ok((
         remainder,
         OpenVPNConfig {
@@ -271,6 +314,7 @@ fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
             rcvbuf,
             cipher,
             tls_cipher,
+            proto,
         },
     ))
 }
@@ -326,7 +370,11 @@ fn parse_verb(input: &str) -> IResult<&str, u32> {
 
 fn parse_remote_cert_tls(input: &str) -> IResult<&str, RemoteCertTLS> {
     let (remainder, (_, remote_cert_tls)) = terminated(
-        separated_pair(tag("remote-cert-tls"), space1, alt((tag("client"), tag("server")))),
+        separated_pair(
+            tag("remote-cert-tls"),
+            space1,
+            alt((tag("client"), tag("server"))),
+        ),
         line_ending,
     )(input)?;
     Ok((remainder, remote_cert_tls.into()))
@@ -394,6 +442,23 @@ fn parse_tls_cipher(input: &str) -> IResult<&str, TLSCipher> {
         line_ending,
     )(input)?;
     Ok((remainder, tls_cipher.into()))
+}
+
+fn parse_proto(input: &str) -> IResult<&str, Proto> {
+    let (remainder, (_, proto)) = terminated(
+        separated_pair(tag("proto"), space1, alt((tag("tcp"), tag("udp")))),
+        line_ending,
+    )(input)?;
+    Ok((remainder, proto.into()))
+}
+
+fn parse_auth_user_pass(input: &str) -> IResult<&str, AuthUserPass> {
+    let (remainder, (_, auth_user_pass)) = terminated(
+        separated_pair(tag("auth-user-pass"), (space1), not_line_ending),
+        line_ending,
+    )(input)?;
+    Ok((remainder, auth_user_pass.into()))
+
 }
 
 fn main() {
