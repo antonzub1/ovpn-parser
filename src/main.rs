@@ -1,25 +1,31 @@
 use clap::Parser;
-use nom::branch::alt;
+use nom::branch::{alt, permutation};
 use nom::bytes::complete::tag;
-use nom::character::complete::{alphanumeric1, digit1, line_ending, not_line_ending, space1};
-use nom::combinator::{map_res, opt};
+use nom::character::complete::{
+    alphanumeric1, digit1, line_ending, newline, not_line_ending, space1,
+};
+use nom::combinator::{map_res, opt, value};
+use nom::multi::{many0, many1};
 use nom::sequence::{separated_pair, terminated};
 use nom::{Err, IResult};
 use tracing::info;
+use tuple_conv::TupleOrVec;
 
+use std::default;
 use std::fs::{read_to_string, remove_file, File};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 use tracing_subscriber::fmt::SubscriberBuilder;
 
-// #[derive(Parser)]
-// #[command(version, about)]
-// struct Args {
-//     #[arg(short, long)]
-//     conf: String,
-// }
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    #[arg(short, long)]
+    conf: String,
+}
 
 // fn import_connection(connection_id: &str) {
 //     unimplemented!();
@@ -45,27 +51,72 @@ use tracing_subscriber::fmt::SubscriberBuilder;
 //         .expect("Failed to set a password");
 // }
 
+type NoBind = bool;
+type PersistKey = bool;
+type PersistTun = bool;
+type Verb = u32;
+type Ping = u32;
+type PingRestart = u32;
+type SndBuf = u32;
+type RcvBuf = u32;
+type CA = PathBuf;
+type Cert = PathBuf;
+type Key = PathBuf;
+type Remote = SocketAddrV4;
+type RemoteRandom = bool;
+
+
 #[derive(Debug)]
+pub enum OpenVPNConfigEntry {
+    ConfigType(ConfigType),
+    DevType(DevType),
+    ResolvRetry(ResolvRetry),
+    NoBind(NoBind),
+    PersistKey(PersistKey),
+    PersistTun(PersistTun),
+    Verb(Verb),
+    RemoteCertTLS(RemoteCertTLS),
+    Ping(Ping),
+    PingRestart(PingRestart),
+    SndBuf(SndBuf),
+    RcvBuf(RcvBuf),
+    Cipher(Cipher),
+    TLSCipher(TLSCipher),
+    Proto(Proto),
+    CA(CA),
+    Cert(Cert),
+    Key(Key),
+    Remotes(Vec<Remote>),
+    RemoteRandom(RemoteRandom),
+}
+
+
+#[derive(Debug, Default)]
 pub struct OpenVPNConfig {
     config_type: ConfigType,
     dev: DevType,
     resolv_retry: ResolvRetry,
-    nobind: bool,
-    persist_key: bool,
-    persist_tun: bool,
-    verb: u32,
+    nobind: NoBind,
+    persist_key: PersistKey,
+    persist_tun: PersistTun,
+    verb: Verb,
     remote_cert_tls: RemoteCertTLS,
-    ping: u32,
-    ping_restart: u32,
-    sndbuf: u32,
-    rcvbuf: u32,
+    ping: Ping,
+    ping_restart: Ping,
+    sndbuf: SndBuf,
+    rcvbuf: RcvBuf,
     cipher: Cipher,
     tls_cipher: TLSCipher,
     proto: Proto,
+    ca: CA,
+    key: Key,
+    remotes: Vec<Remote>,
+    remote_random: RemoteRandom,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum DevType {
+    #[default]
     Tun,
     Tap,
 }
@@ -80,24 +131,27 @@ impl From<&str> for DevType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum ConfigType {
+    #[default]
     Client,
     Server,
 }
 
-impl From<Option<&str>> for ConfigType {
-    fn from(value: Option<&str>) -> Self {
-        match value {
-            Some(_) => Self::Client,
-            None => Self::Server,
+impl From<&str> for ConfigType {
+    fn from(s: &str) -> Self {
+        match s {
+            "client" => Self::Client,
+            "server" => Self::Server,
+            _ => panic!("Unknown config type"),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum ResolvRetry {
     Seconds(u32),
+    #[default]
     Infinite,
 }
 
@@ -110,8 +164,9 @@ impl From<&str> for ResolvRetry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum RemoteCertTLS {
+    #[default]
     Client,
     Server,
 }
@@ -127,8 +182,9 @@ impl From<&str> for RemoteCertTLS {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Cipher {
+    #[default]
     None,
     AES_128_CBC,
     AES_128_CFB,
@@ -178,9 +234,10 @@ impl From<&str> for Cipher {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum TLSCipher {
     // TLS 1.3
+    #[default]
     TLS_AES_256_GCM_SHA384,
     TLS_CHACHA20_POLY1305_SHA256,
     TLS_AES_128_GCM_SHA256,
@@ -254,8 +311,9 @@ impl From<&str> for TLSCipher {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Proto {
+    #[default]
     TCP,
     UDP,
 }
@@ -270,9 +328,10 @@ impl From<&str> for Proto {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum AuthUserPass {
     UserPass(PathBuf),
+    #[default]
     Prompt,
 }
 
@@ -281,82 +340,89 @@ impl From<&str> for AuthUserPass {
         unimplemented!()
     }
 }
+
+fn parse_openvpn_config_entries(input: &str) -> IResult<&str, Vec<OpenVPNConfigEntry>> {
+    let (remainder, entries) = permutation((
+        parse_config_type,
+        parse_dev,
+        parse_resolv_retry,
+        parse_nobind,
+        parse_persist_key,
+        parse_persist_tun,
+        parse_verb,
+        parse_remote_cert_tls,
+        parse_ping,
+        parse_ping_restart,
+        parse_sndbuf,
+        parse_rcvbuf,
+        parse_cipher,
+        parse_tls_cipher,
+        parse_proto,
+        parse_ca,
+        parse_cert,
+        parse_key,
+        parse_remote_random,
+        parse_remotes,
+    ))(input)?;
+    Ok((remainder, entries.as_vec()))
+}
+
 fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
-    let (remainder, config_type) = parse_config_type(input)?;
-    let (remainder, dev) = parse_dev(remainder)?;
-    let (remainder, resolv_retry) = parse_resolv_retry(remainder)?;
-    let (remainder, nobind) = parse_nobind(remainder)?;
-    let (remainder, persist_key) = parse_persist_key(remainder)?;
-    let (remainder, persist_tun) = parse_persist_tun(remainder)?;
-    let (remainder, verb) = parse_verb(remainder)?;
-    let (remainder, remote_cert_tls) = parse_remote_cert_tls(remainder)?;
-    let (remainder, ping) = parse_ping(remainder)?;
-    let (remainder, ping_restart) = parse_ping_restart(remainder)?;
-    let (remainder, sndbuf) = parse_sndbuf(remainder)?;
-    let (remainder, rcvbuf) = parse_rcvbuf(remainder)?;
-    let (remainder, cipher) = parse_cipher(remainder)?;
-    let (remainder, tls_cipher) = parse_tls_cipher(remainder)?;
-    let (remainder, proto) = parse_proto(remainder)?;
+    let config = OpenVPNConfig::default();
+    let (remainder, entries) = parse_openvpn_config_entries(input)?;
+    info!("Config entries: {:?}", entries);
+    Ok((remainder, config))
+}
+
+fn parse_config_type(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
+    let (remainder, config_type) = terminated(tag("client"), line_ending)(input)?;
     Ok((
         remainder,
-        OpenVPNConfig {
-            config_type,
-            dev,
-            resolv_retry,
-            nobind,
-            persist_key,
-            persist_tun,
-            verb,
-            remote_cert_tls,
-            ping,
-            ping_restart,
-            sndbuf,
-            rcvbuf,
-            cipher,
-            tls_cipher,
-            proto,
-        },
+        OpenVPNConfigEntry::ConfigType(config_type.into()),
     ))
 }
 
-fn parse_config_type(input: &str) -> IResult<&str, ConfigType> {
-    let (remainder, config_type) = opt(terminated(tag("client"), line_ending))(input)?;
-    Ok((remainder, config_type.into()))
-}
-
-fn parse_dev(input: &str) -> IResult<&str, DevType> {
+fn parse_dev(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, dev)) = terminated(
         separated_pair(tag("dev"), space1, alt((tag("tun"), tag("tap")))),
         line_ending,
     )(input)?;
-    Ok((remainder, dev.into()))
+    Ok((remainder, OpenVPNConfigEntry::DevType(dev.into())))
 }
 
-fn parse_resolv_retry(input: &str) -> IResult<&str, ResolvRetry> {
+fn parse_resolv_retry(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, resolv_retry)) = terminated(
         separated_pair(tag("resolv-retry"), space1, alt((tag("infinite"), digit1))),
         line_ending,
     )(input)?;
-    Ok((remainder, resolv_retry.into()))
+    Ok((
+        remainder,
+        OpenVPNConfigEntry::ResolvRetry(resolv_retry.into()),
+    ))
 }
 
-fn parse_nobind(input: &str) -> IResult<&str, bool> {
+fn parse_nobind(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, nobind) = opt(terminated(tag("nobind"), line_ending))(input)?;
-    Ok((remainder, nobind.is_some()))
+    Ok((remainder, OpenVPNConfigEntry::NoBind(nobind.is_some())))
 }
 
-fn parse_persist_key(input: &str) -> IResult<&str, bool> {
+fn parse_persist_key(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, persist_key) = opt(terminated(tag("persist-key"), line_ending))(input)?;
-    Ok((remainder, persist_key.is_some()))
+    Ok((
+        remainder,
+        OpenVPNConfigEntry::PersistKey(persist_key.is_some()),
+    ))
 }
 
-fn parse_persist_tun(input: &str) -> IResult<&str, bool> {
+fn parse_persist_tun(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, persist_tun) = opt(terminated(tag("persist-tun"), line_ending))(input)?;
-    Ok((remainder, persist_tun.is_some()))
+    Ok((
+        remainder,
+        OpenVPNConfigEntry::PersistTun(persist_tun.is_some()),
+    ))
 }
 
-fn parse_verb(input: &str) -> IResult<&str, u32> {
-    // TODO: Parse verbosity level with iterator combinator
+fn parse_verb(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, verb)) = terminated(
         separated_pair(
             tag("verb"),
@@ -365,10 +431,10 @@ fn parse_verb(input: &str) -> IResult<&str, u32> {
         ),
         line_ending,
     )(input)?;
-    Ok((remainder, verb))
+    Ok((remainder, OpenVPNConfigEntry::Verb(verb)))
 }
 
-fn parse_remote_cert_tls(input: &str) -> IResult<&str, RemoteCertTLS> {
+fn parse_remote_cert_tls(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, remote_cert_tls)) = terminated(
         separated_pair(
             tag("remote-cert-tls"),
@@ -377,10 +443,13 @@ fn parse_remote_cert_tls(input: &str) -> IResult<&str, RemoteCertTLS> {
         ),
         line_ending,
     )(input)?;
-    Ok((remainder, remote_cert_tls.into()))
+    Ok((
+        remainder,
+        OpenVPNConfigEntry::RemoteCertTLS(remote_cert_tls.into()),
+    ))
 }
 
-fn parse_ping(input: &str) -> IResult<&str, u32> {
+fn parse_ping(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, ping)) = terminated(
         separated_pair(
             tag("ping"),
@@ -389,10 +458,10 @@ fn parse_ping(input: &str) -> IResult<&str, u32> {
         ),
         line_ending,
     )(input)?;
-    Ok((remainder, ping))
+    Ok((remainder, OpenVPNConfigEntry::Ping(ping)))
 }
 
-fn parse_ping_restart(input: &str) -> IResult<&str, u32> {
+fn parse_ping_restart(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, ping_restart)) = terminated(
         separated_pair(
             tag("ping-restart"),
@@ -401,10 +470,10 @@ fn parse_ping_restart(input: &str) -> IResult<&str, u32> {
         ),
         line_ending,
     )(input)?;
-    Ok((remainder, ping_restart))
+    Ok((remainder, OpenVPNConfigEntry::PingRestart(ping_restart)))
 }
 
-fn parse_sndbuf(input: &str) -> IResult<&str, u32> {
+fn parse_sndbuf(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, sndbuf)) = terminated(
         separated_pair(
             tag("sndbuf"),
@@ -413,10 +482,10 @@ fn parse_sndbuf(input: &str) -> IResult<&str, u32> {
         ),
         line_ending,
     )(input)?;
-    Ok((remainder, sndbuf))
+    Ok((remainder, OpenVPNConfigEntry::SndBuf(sndbuf)))
 }
 
-fn parse_rcvbuf(input: &str) -> IResult<&str, u32> {
+fn parse_rcvbuf(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, rcvbuf)) = terminated(
         separated_pair(
             tag("rcvbuf"),
@@ -425,85 +494,97 @@ fn parse_rcvbuf(input: &str) -> IResult<&str, u32> {
         ),
         line_ending,
     )(input)?;
-    Ok((remainder, rcvbuf))
+    Ok((remainder, OpenVPNConfigEntry::RcvBuf(rcvbuf)))
 }
 
-fn parse_cipher(input: &str) -> IResult<&str, Cipher> {
+fn parse_cipher(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, cipher)) = terminated(
         separated_pair(tag("cipher"), space1, not_line_ending),
         line_ending,
     )(input)?;
-    Ok((remainder, cipher.into()))
+    Ok((remainder, OpenVPNConfigEntry::Cipher(cipher.into())))
 }
 
-fn parse_tls_cipher(input: &str) -> IResult<&str, TLSCipher> {
+fn parse_tls_cipher(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, tls_cipher)) = terminated(
         separated_pair(tag("tls-cipher"), space1, not_line_ending),
         line_ending,
     )(input)?;
-    Ok((remainder, tls_cipher.into()))
+    Ok((remainder, OpenVPNConfigEntry::TLSCipher(tls_cipher.into())))
 }
 
-fn parse_proto(input: &str) -> IResult<&str, Proto> {
+fn parse_proto(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, (_, proto)) = terminated(
         separated_pair(tag("proto"), space1, alt((tag("tcp"), tag("udp")))),
         line_ending,
     )(input)?;
-    Ok((remainder, proto.into()))
+    Ok((remainder, OpenVPNConfigEntry::Proto(proto.into())))
 }
 
-fn parse_auth_user_pass(input: &str) -> IResult<&str, AuthUserPass> {
-    let (remainder, (_, auth_user_pass)) = terminated(
-        separated_pair(tag("auth-user-pass"), (space1), not_line_ending),
+fn parse_ca(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
+    let (remainder, (_, tls_cipher)) = terminated(
+        separated_pair(tag("ca"), space1, not_line_ending),
         line_ending,
     )(input)?;
-    Ok((remainder, auth_user_pass.into()))
+    Ok((remainder, OpenVPNConfigEntry::CA(tls_cipher.into())))
+}
 
+fn parse_cert(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
+    let (remainder, (_, cert)) = terminated(
+        separated_pair(tag("cert"), space1, not_line_ending),
+        line_ending,
+    )(input)?;
+    Ok((remainder, OpenVPNConfigEntry::Cert(cert.into())))
+}
+
+fn parse_key(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
+    let (remainder, (_, key)) = terminated(
+        separated_pair(tag("key"), space1, not_line_ending),
+        line_ending,
+    )(input)?;
+    Ok((remainder, OpenVPNConfigEntry::Key(key.into())))
+}
+
+fn parse_remote(input: &str) -> IResult<&str, Remote> {
+    let (remainder, (_, addr_string)) = terminated(
+        separated_pair(tag("remote"), space1, not_line_ending),
+        line_ending,
+    )(input)?;
+    let addr_string = addr_string.replace(" ", ":");
+    Ok((remainder, SocketAddrV4::from_str(&addr_string).expect("Failed to parse an address")))
+}
+
+fn parse_remotes(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
+    let (remainder, remotes) = many1(parse_remote)(input)?;
+    Ok((remainder, OpenVPNConfigEntry::Remotes(remotes)))
+}
+
+
+fn parse_remote_random(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
+    let (remainder, remote_random) = opt(terminated(tag("remote-random"), line_ending))(input)?;
+    Ok((
+        remainder,
+        OpenVPNConfigEntry::RemoteRandom(remote_random.is_some()),
+    ))
 }
 
 fn main() {
-    // let args = Args::parse();
-    // let mut conf = String::new();
-    // let mut cert = String::new();
+    let args = Args::parse();
+    let mut conf = String::new();
 
-    // File::open(format!("{}/mullvad_se_mma.conf", args.conf))
-    //     .expect("Failed to open a conf file")
-    //     .read_to_string(&mut conf)
-    //     .expect("Failed to read a conf");
+    File::open(args.conf)
+        .expect("Failed to open a conf file")
+        .read_to_string(&mut conf)
+        .expect("Failed to read a conf");
 
-    // File::open(format!("{}/mullvad_ca.crt", args.conf))
-    //     .expect("Failed to open a cert file")
-    //     .read_to_string(&mut cert)
-    //     .expect("Failed to read a cert");
-
-    // let auth: Vec<String> = BufReader::new(
-    //     File::open(format!("{}/mullvad_userpass.txt", args.conf))
-    //     .expect("Failed to open an authentication file")
-    // )
-    //     .lines()
-    //     .map(|line| line.unwrap())
-    //     .collect();
-
-    // let connection_id = "conn";
-    // let filename = format!("{}.ovpn", connection_id);
-    // let mut ovpn = File::create(filename)
-    //     .expect("Failed to create a file");
-    // write!(&mut ovpn, "{}\n<ca>\n{}\n</ca>", conf, cert)
-    //     .expect("Failed to write a temp file");
-    // import_connection(connection_id);
-    // set_connection_username(connection_id, &auth[0]);
-    // set_connection_password(connection_id, &auth[1]);
-    // remove_file("conn.ovpn").expect("Failed to remove a temporary file");
 
     let global_default = SubscriberBuilder::default()
         .with_level(true)
         .with_file(true)
+        .with_line_number(true)
         .finish();
 
     tracing::subscriber::set_global_default(global_default)
         .expect("Unable to set global subscriber.");
-    let conf = read_to_string("conn.ovpn").expect("Failed to read a file");
-    let (_, config) = parse_openvpn_config(&conf).expect("Failed to parse OpenVPN configuration");
-    info!("config: {:?}", config);
-    // info!("remainder: {}", remainder);
+    let _ = parse_openvpn_config(&conf).expect("Failed to parse OpenVPN configuration");
 }
