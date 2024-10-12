@@ -2,21 +2,19 @@ use clap::Parser;
 use nom::branch::{alt, permutation};
 use nom::bytes::complete::tag;
 use nom::character::complete::{
-    alphanumeric1, digit1, line_ending, newline, not_line_ending, space1,
+    digit1, line_ending, not_line_ending, space1,
 };
-use nom::combinator::{map_res, opt, value};
-use nom::multi::{many0, many1};
+use nom::combinator::{map_res, opt};
+use nom::multi::many1;
 use nom::sequence::{separated_pair, terminated};
-use nom::{Err, IResult};
+use nom::IResult;
 use tracing::info;
 use tuple_conv::TupleOrVec;
 
-use std::default;
-use std::fs::{read_to_string, remove_file, File};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::fs::File;
+use std::io::Read;
+use std::net::SocketAddrV4;
 use std::path::PathBuf;
-use std::process::Command;
 use std::str::FromStr;
 use tracing_subscriber::fmt::SubscriberBuilder;
 
@@ -27,67 +25,29 @@ struct Args {
     conf: String,
 }
 
-// fn import_connection(connection_id: &str) {
-//     unimplemented!();
-//     Command::new("nmcli")
-//         .args(["connection", "import", "type", "openvpn", "file", &format!("{}.ovpn", connection_id)])
-//         .output()
-//         .expect("Failed to import connection");
-// }
-
-// fn set_connection_username(connection_id: &str, username: &str) {
-//     unimplemented!();
-//     Command::new("nmcli")
-//         .args(["connection", "modify", "id", connection_id, "+vpn.data", &format!("username={}", username)])
-//         .output()
-//         .expect("Failed to set a username");
-// }
-
-// fn set_connection_password(connection_id: &str, password: &str) {
-//     unimplemented!();
-//     Command::new("nmcli")
-//         .args(["connection", "modify", "id", &connection_id, "+vpn.secrets", &format!("password={}", password)])
-//         .output()
-//         .expect("Failed to set a password");
-// }
-
-type NoBind = bool;
-type PersistKey = bool;
-type PersistTun = bool;
-type Verb = u32;
-type Ping = u32;
-type PingRestart = u32;
-type SndBuf = u32;
-type RcvBuf = u32;
-type CA = PathBuf;
-type Cert = PathBuf;
-type Key = PathBuf;
-type Remote = SocketAddrV4;
-type RemoteRandom = bool;
-
 
 #[derive(Debug)]
 pub enum OpenVPNConfigEntry {
     ConfigType(ConfigType),
     DevType(DevType),
     ResolvRetry(ResolvRetry),
-    NoBind(NoBind),
-    PersistKey(PersistKey),
-    PersistTun(PersistTun),
-    Verb(Verb),
+    NoBind(bool),
+    PersistKey(bool),
+    PersistTun(bool),
+    Verb(u32),
     RemoteCertTLS(RemoteCertTLS),
-    Ping(Ping),
-    PingRestart(PingRestart),
-    SndBuf(SndBuf),
-    RcvBuf(RcvBuf),
+    Ping(u32),
+    PingRestart(u32),
+    SndBuf(u32),
+    RcvBuf(u32),
     Cipher(Cipher),
     TLSCipher(TLSCipher),
     Proto(Proto),
-    CA(CA),
-    Cert(Cert),
-    Key(Key),
-    Remotes(Vec<Remote>),
-    RemoteRandom(RemoteRandom),
+    CA(PathBuf),
+    Cert(PathBuf),
+    Key(PathBuf),
+    Remotes(Vec<SocketAddrV4>),
+    RemoteRandom(bool),
 }
 
 
@@ -95,23 +55,23 @@ pub enum OpenVPNConfigEntry {
 pub struct OpenVPNConfig {
     config_type: ConfigType,
     dev: DevType,
-    resolv_retry: ResolvRetry,
-    nobind: NoBind,
-    persist_key: PersistKey,
-    persist_tun: PersistTun,
-    verb: Verb,
+    resolv_retry: bool,
+    nobind: bool,
+    persist_key: bool,
+    persist_tun: bool,
+    verb: u32,
     remote_cert_tls: RemoteCertTLS,
-    ping: Ping,
-    ping_restart: Ping,
-    sndbuf: SndBuf,
-    rcvbuf: RcvBuf,
+    ping: u32,
+    ping_restart: u32,
+    sndbuf: u32,
+    rcvbuf: u32,
     cipher: Cipher,
     tls_cipher: TLSCipher,
     proto: Proto,
-    ca: CA,
-    key: Key,
-    remotes: Vec<Remote>,
-    remote_random: RemoteRandom,
+    ca: PathBuf,
+    key: PathBuf,
+    remotes: Vec<SocketAddrV4>,
+    remote_random: bool,
 }
 
 #[derive(Debug, Default)]
@@ -328,27 +288,14 @@ impl From<&str> for Proto {
     }
 }
 
-#[derive(Debug, Default)]
-enum AuthUserPass {
-    UserPass(PathBuf),
-    #[default]
-    Prompt,
-}
-
-impl From<&str> for AuthUserPass {
-    fn from(s: &str) -> Self {
-        unimplemented!()
-    }
-}
-
 fn parse_openvpn_config_entries(input: &str) -> IResult<&str, Vec<OpenVPNConfigEntry>> {
     let (remainder, entries) = permutation((
         parse_config_type,
         parse_dev,
         parse_resolv_retry,
-        parse_nobind,
         parse_persist_key,
         parse_persist_tun,
+        parse_nobind,
         parse_verb,
         parse_remote_cert_tls,
         parse_ping,
@@ -545,7 +492,7 @@ fn parse_key(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     Ok((remainder, OpenVPNConfigEntry::Key(key.into())))
 }
 
-fn parse_remote(input: &str) -> IResult<&str, Remote> {
+fn parse_remote(input: &str) -> IResult<&str, SocketAddrV4> {
     let (remainder, (_, addr_string)) = terminated(
         separated_pair(tag("remote"), space1, not_line_ending),
         line_ending,
@@ -586,5 +533,5 @@ fn main() {
 
     tracing::subscriber::set_global_default(global_default)
         .expect("Unable to set global subscriber.");
-    let _ = parse_openvpn_config(&conf).expect("Failed to parse OpenVPN configuration");
+    let _ = parse_openvpn_config(&conf).expect("Failed to parse openvpn config");
 }

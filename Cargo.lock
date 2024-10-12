@@ -172,6 +172,7 @@ dependencies = [
  "nom",
  "tracing",
  "tracing-subscriber",
+ "tuple-conv",
 ]
 
 [[package]]
@@ -296,6 +297,12 @@ dependencies = [
  "tracing-core",
  "tracing-log",
 ]
+
+[[package]]
+name = "tuple-conv"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd6314683350324c1bb3d71a65fbeacb4e870cb4faf30b28d8a7787fb8116dd"
 
 [[package]]
 name = "unicode-ident"
