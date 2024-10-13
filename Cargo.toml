@@ -15,7 +15,3 @@ tuple-conv = "1.0.1"
 [[bin]]
 name = "ovpn_importer"
 path = "src/main.rs"
-
-[[bin]]
-name = "e"
-path = "src/e.rs"
