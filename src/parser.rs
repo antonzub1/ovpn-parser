@@ -83,7 +83,8 @@ fn parse_dev(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, raw_entry) = terminated(not_line_ending, line_ending)(input)?;
     let (_, (_, dev)) =
         separated_pair(tag("dev"), space1, alt((tag("tun"), tag("tap"))))(raw_entry)?;
-    Ok((remainder, OpenVPNConfigEntry::Dev(dev.into())))
+    let dev = DevType::from_str(dev).expect("Failed to parse dev");
+    Ok((remainder, OpenVPNConfigEntry::Dev(dev)))
 }
 
 fn parse_resolv_retry(input: &str) -> IResult<&str, OpenVPNConfigEntry> {

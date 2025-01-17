@@ -2,6 +2,8 @@ use std::str::FromStr;
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
 
+use strum::{Display, EnumString};
+
 #[derive(Debug)]
 pub enum OpenVPNConfigEntry {
     ConfigType(ConfigType),
@@ -50,21 +52,13 @@ pub struct OpenVPNConfig {
     pub remote_random: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Display, EnumString)]
 pub enum DevType {
     #[default]
+    #[strum(to_string="tun")]
     Tun,
+    #[strum(to_string="tap")]
     Tap,
-}
-
-impl From<&str> for DevType {
-    fn from(s: &str) -> Self {
-        match s {
-            "tun" => Self::Tun,
-            "tap" => Self::Tap,
-            _ => panic!("Invalid dev type"),
-        }
-    }
 }
 
 #[derive(Debug, Default)]
