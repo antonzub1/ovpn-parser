@@ -73,9 +73,10 @@ pub fn parse_openvpn_config(input: &str) -> IResult<&str, OpenVPNConfig> {
 
 fn parse_config_type(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, config_type) = terminated(tag("client"), line_ending)(input)?;
+    let config_type = ConfigType::from_str(config_type).expect("Failed to parse config_type");
     Ok((
         remainder,
-        OpenVPNConfigEntry::ConfigType(config_type.into()),
+        OpenVPNConfigEntry::ConfigType(config_type),
     ))
 }
 
@@ -135,9 +136,10 @@ fn parse_remote_cert_tls(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
         space1,
         alt((tag("client"), tag("server"))),
     )(raw_entry)?;
+    let remote_cert_tls = RemoteCertTLS::from_str(remote_cert_tls).expect("Failed to parse remote_cert_tls");
     Ok((
         remainder,
-        OpenVPNConfigEntry::RemoteCertTLS(remote_cert_tls.into()),
+        OpenVPNConfigEntry::RemoteCertTLS(remote_cert_tls),
     ))
 }
 
@@ -184,21 +186,24 @@ fn parse_rcvbuf(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
 fn parse_cipher(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, raw_entry) = terminated(not_line_ending, line_ending)(input)?;
     let (_, (_, cipher)) = separated_pair(tag("cipher"), space1, not_line_ending)(raw_entry)?;
-    Ok((remainder, OpenVPNConfigEntry::Cipher(cipher.into())))
+    let cipher = Cipher::from_str(cipher).expect("Failed to parse cipher");
+    Ok((remainder, OpenVPNConfigEntry::Cipher(cipher)))
 }
 
 fn parse_tls_cipher(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, raw_entry) = terminated(not_line_ending, line_ending)(input)?;
     let (_, (_, tls_cipher)) =
         separated_pair(tag("tls-cipher"), space1, not_line_ending)(raw_entry)?;
-    Ok((remainder, OpenVPNConfigEntry::TLSCipher(tls_cipher.into())))
+    let tls_cipher = TLSCipher::from_str(tls_cipher).expect("Failed to parse tls_cipher");
+    Ok((remainder, OpenVPNConfigEntry::TLSCipher(tls_cipher)))
 }
 
 fn parse_proto(input: &str) -> IResult<&str, OpenVPNConfigEntry> {
     let (remainder, raw_entry) = terminated(not_line_ending, line_ending)(input)?;
     let (_, (_, proto)) =
         separated_pair(tag("proto"), space1, alt((tag("tcp"), tag("udp"))))(raw_entry)?;
-    Ok((remainder, OpenVPNConfigEntry::Proto(proto.into())))
+    let proto = Proto::from_str(proto).expect("Failed to parse proto");
+    Ok((remainder, OpenVPNConfigEntry::Proto(proto)))
 }
 
 fn parse_ca(input: &str) -> IResult<&str, OpenVPNConfigEntry> {

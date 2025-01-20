@@ -53,29 +53,19 @@ pub struct OpenVPNConfig {
 }
 
 #[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum DevType {
     #[default]
-    #[strum(to_string="tun")]
     Tun,
-    #[strum(to_string="tap")]
     Tap,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum ConfigType {
     #[default]
     Client,
     Server,
-}
-
-impl From<&str> for ConfigType {
-    fn from(s: &str) -> Self {
-        match s {
-            "client" => Self::Client,
-            "server" => Self::Server,
-            _ => panic!("Unknown config type"),
-        }
-    }
 }
 
 #[derive(Debug, Default)]
@@ -94,25 +84,17 @@ impl From<&str> for ResolvRetry {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum RemoteCertTLS {
     #[default]
     Client,
     Server,
 }
 
-impl From<&str> for RemoteCertTLS {
-    fn from(s: &str) -> Self {
-        match s {
-            "client" => Self::Client,
-            "server" => Self::Server,
-            _ => panic!("Invalid remote-cert-tls type"),
-        }
-    }
-}
-
 #[allow(non_camel_case_types)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "SCREAMING-KEBAB-CASE")]
 pub enum Cipher {
     #[default]
     None,
@@ -136,35 +118,10 @@ pub enum Cipher {
     AES_256_OFB,
 }
 
-impl From<&str> for Cipher {
-    fn from(s: &str) -> Self {
-        match s {
-            "none" => Self::None,
-            "AES-128-CBC" => Self::AES_128_CBC,
-            "AES-128-CFB" => Self::AES_128_CFB,
-            "AES-128-CFB1" => Self::AES_128_CFB1,
-            "AES-128-CFB8" => Self::AES_128_CFB8,
-            "AES-128-GCM" => Self::AES_128_GCM,
-            "AES-128-OFB" => Self::AES_128_OFB,
-            "AES-192-CBC" => Self::AES_192_CBC,
-            "AES-192-CFB" => Self::AES_192_CFB,
-            "AES-192-CFB1" => Self::AES_192_CFB1,
-            "AES-192-CFB8" => Self::AES_192_CFB8,
-            "AES-192-GCM" => Self::AES_192_GCM,
-            "AES-192-OFB" => Self::AES_192_OFB,
-            "AES-256-CBC" => Self::AES_256_CBC,
-            "AES-256-CFB" => Self::AES_256_CFB,
-            "AES-256-CFB1" => Self::AES_256_CFB1,
-            "AES-256-CFB8" => Self::AES_256_CFB8,
-            "AES-256-GCM" => Self::AES_256_GCM,
-            "AES-256-OFB" => Self::AES_256_OFB,
-            _ => panic!("Invalid cipher type"),
-        }
-    }
-}
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "SCREAMING-KEBAB-CASE")]
 pub enum TLSCipher {
     // TLS 1.3
     #[default]
@@ -195,65 +152,12 @@ pub enum TLSCipher {
     TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
 }
 
-impl From<&str> for TLSCipher {
-    fn from(s: &str) -> Self {
-        match s {
-            "TLS_AES_256_GCM_SHA384" => Self::TLS_AES_256_GCM_SHA384,
-            "TLS_CHACHA20_POLY1305_SHA256" => Self::TLS_CHACHA20_POLY1305_SHA256,
-            "TLS_AES_128_GCM_SHA256" => Self::TLS_AES_128_GCM_SHA256,
 
-            "TLS-ECDHE-ECDSA-WITH-AES-256-GCM-SHA384" => {
-                Self::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-            }
-            "TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384" => Self::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-            "TLS-DHE-RSA-WITH-AES-256-GCM-SHA384" => Self::TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
-            "TLS-ECDHE-ECDSA-WITH-CHACHA20-POLY1305-SHA256" => {
-                Self::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-            }
-            "TLS-ECDHE-RSA-WITH-CHACHA20-POLY1305-SHA256" => {
-                Self::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-            }
-            "TLS-DHE-RSA-WITH-CHACHA20-POLY1305-SHA256" => {
-                Self::TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-            }
-            "TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256" => {
-                Self::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-            }
-            "TLS-ECDHE-RSA-WITH-AES-128-GCM-SHA256" => Self::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-            "TLS-DHE-RSA-WITH-AES-128-GCM-SHA256" => Self::TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
-            "TLS-ECDHE-ECDSA-WITH-AES-256-CBC-SHA384" => {
-                Self::TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
-            }
-            "TLS-ECDHE-RSA-WITH-AES-256-CBC-SHA384" => Self::TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
-            "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA256" => {
-                Self::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
-            }
-            "TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA256" => Self::TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
-            "TLS-DHE-RSA-WITH-AES-128-CBC-SHA256" => Self::TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
-            "TLS-ECDHE-ECDSA-WITH-AES-256-CBC-SHA" => Self::TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-            "TLS-ECDHE-RSA-WITH-AES-256-CBC-SHA" => Self::TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-            "TLS-DHE-RSA-WITH-AES-256-CBC-SHA" => Self::TLS_DHE_RSA_WITH_AES_256_CBC_SHA,
-            "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA" => Self::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-            "TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA" => Self::TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-            "TLS-DHE-RSA-WITH-AES-128-CBC-SHA" => Self::TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
-            _ => panic!("Invalid TLS cipher"),
-        }
-    }
-}
-
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum Proto {
     #[default]
     TCP,
     UDP,
 }
 
-impl From<&str> for Proto {
-    fn from(s: &str) -> Self {
-        match s {
-            "tcp" => Self::TCP,
-            "udp" => Self::UDP,
-            _ => panic!("Invalid proto type"),
-        }
-    }
-}
