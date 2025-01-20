@@ -53,11 +53,10 @@ pub struct OpenVPNConfig {
 }
 
 #[derive(Debug, Default, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum DevType {
     #[default]
-    #[strum(to_string="tun")]
     Tun,
-    #[strum(to_string="tap")]
     Tap,
 }
 
